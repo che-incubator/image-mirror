@@ -1,0 +1,56 @@
+#
+# Copyright (c) 2026 Red Hat, Inc.
+# This program and the accompanying materials are made
+# available under the terms of the Eclipse Public License 2.0
+# which is available at https://www.eclipse.org/legal/epl-2.0/
+#
+# SPDX-License-Identifier: EPL-2.0
+#
+name: Validate Images
+
+on:
+  pull_request:
+    branches: ['*']
+
+permissions:
+  contents: read
+
+jobs:
+
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: "Checkout source code"
+        uses: actions/checkout@v4
+      -
+        name: "Install yq"
+        run: |
+          sudo wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 \
+            && sudo chmod +x /usr/local/bin/yq
+      -
+        name: "Validate source images"
+        run: |
+          FAILED=0
+          image_count=$(yq '.images | length' images.yaml)
+          for i in $(seq 0 $((image_count - 1))); do
+            name=$(yq ".images[$i].name" images.yaml)
+            src=$(yq ".images[$i].source" images.yaml)
+            tag_count=$(yq ".images[$i].tags | length" images.yaml)
+            for j in $(seq 0 $((tag_count - 1))); do
+              tag=$(yq ".images[$i].tags[$j]" images.yaml)
+              echo -n "Checking $src:$tag ... "
+              if skopeo inspect "docker://$src:$tag" > /dev/null 2>&1; then
+                echo "OK"
+              else
+                echo "FAILED"
+                echo "::error::Source image not found: $src:$tag"
+                FAILED=$((FAILED + 1))
+              fi
+            done
+          done
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED image(s) not found"
+            exit 1
+          fi

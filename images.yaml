@@ -1,0 +1,18 @@
+images:
+  - name: hermes-agent
+    source: docker.io/nousresearch/hermes-agent
+    destination: quay.io/che-incubator/image-mirror/hermes-agent
+    tags:
+      - v2026.6.5
+
+  - name: picoclaw
+    source: docker.io/sipeed/picoclaw
+    destination: quay.io/che-incubator/image-mirror/picoclaw
+    tags:
+      - v0.2.9-launcher
+
+  - name: zeroclaw
+    source: ghcr.io/zeroclaw-labs/zeroclaw
+    destination: quay.io/che-incubator/image-mirror/zeroclaw
+    tags:
+      - v0.8.1

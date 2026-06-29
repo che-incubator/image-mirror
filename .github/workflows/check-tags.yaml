@@ -1,0 +1,85 @@
+#
+# Copyright (c) 2026 Red Hat, Inc.
+# This program and the accompanying materials are made
+# available under the terms of the Eclipse Public License 2.0
+# which is available at https://www.eclipse.org/legal/epl-2.0/
+#
+# SPDX-License-Identifier: EPL-2.0
+#
+name: Check New Tags
+
+on:
+  schedule:
+    - cron: '42 5 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+
+  check-tags:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: "Checkout source code"
+        uses: actions/checkout@v4
+      -
+        name: "Install yq"
+        run: |
+          sudo wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 \
+            && sudo chmod +x /usr/local/bin/yq
+      -
+        name: "Check for new upstream tags"
+        id: check
+        run: |
+          NEW_TAGS_FOUND=false
+          image_count=$(yq '.images | length' images.yaml)
+
+          for i in $(seq 0 $((image_count - 1))); do
+            name=$(yq ".images[$i].name" images.yaml)
+            src=$(yq ".images[$i].source" images.yaml)
+            echo "::group::Checking $name ($src)"
+
+            # Get all upstream tags
+            upstream_tags=$(skopeo list-tags "docker://$src" 2>/dev/null | yq -r '.Tags[]' 2>/dev/null || true)
+            if [ -z "$upstream_tags" ]; then
+              echo "::warning::Could not list tags for $src"
+              echo "::endgroup::"
+              continue
+            fi
+
+            # Get currently tracked tags
+            tag_count=$(yq ".images[$i].tags | length" images.yaml)
+            tracked=""
+            for j in $(seq 0 $((tag_count - 1))); do
+              tracked="$tracked $(yq ".images[$i].tags[$j]" images.yaml)"
+            done
+
+            # Find new tags
+            for tag in $upstream_tags; do
+              if ! echo "$tracked" | grep -qw "$tag"; then
+                echo "New tag: $name:$tag"
+                yq -i ".images[$i].tags += [\"$tag\"]" images.yaml
+                NEW_TAGS_FOUND=true
+              fi
+            done
+
+            echo "::endgroup::"
+          done
+
+          echo "new_tags=$NEW_TAGS_FOUND" >> "$GITHUB_OUTPUT"
+      -
+        name: "Create PR with new tags"
+        if: steps.check.outputs.new_tags == 'true'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          commit-message: "chore: add new upstream image tags"
+          title: "chore: add new upstream image tags"
+          body: |
+            New upstream tags detected by the check-tags workflow.
+            Review the changes to `images.yaml` and merge to trigger mirroring.
+          branch: chore/new-tags
+          delete-branch: true

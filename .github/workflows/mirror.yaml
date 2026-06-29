@@ -1,0 +1,53 @@
+#
+# Copyright (c) 2026 Red Hat, Inc.
+# This program and the accompanying materials are made
+# available under the terms of the Eclipse Public License 2.0
+# which is available at https://www.eclipse.org/legal/epl-2.0/
+#
+# SPDX-License-Identifier: EPL-2.0
+#
+name: Mirror Images
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'images.yaml'
+  workflow_dispatch:
+    inputs:
+      image:
+        description: 'Mirror a specific image (name from images.yaml) or leave empty for all'
+        required: false
+        default: ''
+  schedule:
+    - cron: '17 3 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: "Checkout source code"
+        uses: actions/checkout@v4
+      -
+        name: "Install yq"
+        run: |
+          sudo wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 \
+            && sudo chmod +x /usr/local/bin/yq
+      -
+        name: "Login to Quay.io"
+        run: skopeo login quay.io -u "$QUAY_USERNAME" -p "$QUAY_PASSWORD"
+        env:
+          QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+          QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+      -
+        name: "Mirror images"
+        run: bash mirror.sh "$IMAGE_FILTER"
+        env:
+          IMAGE_FILTER: ${{ github.event.inputs.image }}
